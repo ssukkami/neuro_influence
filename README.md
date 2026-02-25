@@ -1,18 +1,21 @@
-from pathlib import Path
+## Model download
 
-descriptions = {
-    "model_assets": "Stored neural network artifacts (weights, scalers).",
-    "templates": "HTML templates for the web interface.",
-    "static": "Static frontend resources (CSS, JS, images).",
-    "app.py": "Main application entry point.",
-    "inference.py": "Model inference and prediction logic.",
-    "requirements.txt": "Project dependencies."
-}
+The trained model is not stored in this repository due to its large size.
 
-with open("README.md", "w", encoding="utf-8") as f:
-    f.write("# neuro_influence\n\n")
-    f.write("## Repository structure\n\n")
-    for path in Path(".").iterdir():
-        name = path.name
-        if name in descriptions:
-            f.write(f"- `{name}` – {descriptions[name]}\n")
+You can download the model from Google Drive:
+PASTE_YOUR_GOOGLE_DRIVE_LINK_HERE
+
+After downloading:
+1. Download the folder as ZIP (Google Drive archives it automatically).
+2. Extract the archive.
+3. Place the files into the following directory:
+
+model_assets/
+ ├── best_roberta_model.pth
+ └── best_scaler.pkl
+
+## Usage
+
+Install dependencies:
+```bash
+pip install -r requirements.txt

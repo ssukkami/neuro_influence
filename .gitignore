@@ -1,8 +1,10 @@
-@"
-.venv/
+# Python
 __pycache__/
 *.pyc
-.env
-*.pth
+.venv/
+
+# Model artifacts (NOT stored in repo)
 model_assets/*.pth
-"@ | Out-File -Encoding utf8 .gitignore
+model_assets/*.pkl
+model_assets/*.safetensors
+*.zip

@@ -1,10 +1,25 @@
 import re
 import unicodedata
+from pathlib import Path
+
+import joblib
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import joblib
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoModel, AutoTokenizer
+
+MODEL_PATH = Path("model_assets/best_roberta_model.pth")
+SCALER_PATH = Path("model_assets/best_scaler.pkl")
+
+if not MODEL_PATH.exists() or not SCALER_PATH.exists():
+    raise FileNotFoundError(
+        "Model files not found.\n"
+        "Download them from Google Drive and place into model_assets/.\n"
+        "Required files:\n"
+        " - model_assets/best_roberta_model.pth\n"
+        " - model_assets/best_scaler.pkl\n"
+        "See README.md for details."
+    )
 
 try:
     from textblob import TextBlob
@@ -24,7 +39,7 @@ def _count_emojis(text: str) -> int:
     for ch in text:
         cat = unicodedata.category(ch)
         cp = ord(ch)
-        if cat in ('So', 'Sm') or (0x1F300 <= cp <= 0x1FAFF) or (0x2600 <= cp <= 0x27BF):
+        if cat in ("So", "Sm") or (0x1F300 <= cp <= 0x1FAFF) or (0x2600 <= cp <= 0x27BF):
             count += 1
     return count
 
@@ -45,7 +60,7 @@ def _flesch(text: str) -> float:
         except Exception:
             pass
     words = text.split()
-    sents = max(text.count('.') + text.count('!') + text.count('?'), 1)
+    sents = max(text.count(".") + text.count("!") + text.count("?"), 1)
     syllables = sum(_syllable_count(w) for w in words)
     wc = max(len(words), 1)
     return 206.835 - 1.015 * (wc / sents) - 84.6 * (syllables / wc)
@@ -57,7 +72,7 @@ def _sentence_count(text: str) -> int:
             return max(int(_textstat.sentence_count(text)), 1)
         except Exception:
             pass
-    return max(text.count('.') + text.count('!') + text.count('?'), 1)
+    return max(text.count(".") + text.count("!") + text.count("?"), 1)
 
 
 def _syllable_count(word: str) -> int:
@@ -85,15 +100,26 @@ class ImprovedEngagementModel(nn.Module):
             param.requires_grad = False
 
         self.text_branch = nn.Sequential(
-            nn.Linear(hidden, 256), nn.LayerNorm(256), nn.ReLU(), nn.Dropout(0.3),
-            nn.Linear(256, 128), nn.ReLU(), nn.Dropout(0.2),
+            nn.Linear(hidden, 256),
+            nn.LayerNorm(256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.2),
         )
         self.tabular_branch = nn.Sequential(
-            nn.Linear(extra_dim, 64), nn.BatchNorm1d(64), nn.ReLU(), nn.Dropout(0.2),
-            nn.Linear(64, 32), nn.ReLU(),
+            nn.Linear(extra_dim, 64),
+            nn.BatchNorm1d(64),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(64, 32),
+            nn.ReLU(),
         )
         self.fusion = nn.Sequential(
-            nn.Linear(128 + 32, 64), nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(128 + 32, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
             nn.Linear(64, 1),
         )
 
@@ -105,39 +131,54 @@ class ImprovedEngagementModel(nn.Module):
     def forward(self, input_ids, attention_mask, extra_feats):
         out = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         pooled = self.mean_pool(out, attention_mask)
-        fused = torch.cat(
-            [self.text_branch(pooled), self.tabular_branch(extra_feats)], dim=1
-        )
+        fused = torch.cat([self.text_branch(pooled), self.tabular_branch(extra_feats)], dim=1)
         return self.fusion(fused).squeeze()
 
 
 class Predictor:
     SENTIMENT_COLS = ["sent_neg", "sent_neu", "sent_pos"]
     NLP_COLS = [
-        "text_len", "word_count", "hashtag_count", "mention_count",
-        "exclamation_count", "question_count", "emoji_count"
+        "text_len",
+        "word_count",
+        "hashtag_count",
+        "mention_count",
+        "exclamation_count",
+        "question_count",
+        "emoji_count",
     ]
     ACCOUNT_COLS = ["followers", "following", "num_posts", "is_business_account"]
     ALL_FEATURE_COLS = SENTIMENT_COLS + NLP_COLS + ACCOUNT_COLS
 
     _CTA_WORDS = {
-        "click", "link", "comment", "share", "drop", "check",
-        "follow", "like", "save", "tag", "visit", "join", "sign", "get"
+        "click",
+        "link",
+        "comment",
+        "share",
+        "drop",
+        "check",
+        "follow",
+        "like",
+        "save",
+        "tag",
+        "visit",
+        "join",
+        "sign",
+        "get",
     }
 
     def __init__(
         self,
-        model_path: str = "model_assets/best_roberta_model.pth",
-        scaler_path: str = "model_assets/best_scaler.pkl"
+        model_path: str = str(MODEL_PATH),
+        scaler_path: str = str(SCALER_PATH),
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.tokenizer = AutoTokenizer.from_pretrained("roberta-base")
 
         self.scaler = joblib.load(scaler_path)
-        if self.scaler.n_features_in_ != len(self.ALL_FEATURE_COLS):
+        if getattr(self.scaler, "n_features_in_", None) != len(self.ALL_FEATURE_COLS):
             raise ValueError(
-                f"Scaler очікує {self.scaler.n_features_in_} фічей, "
-                f"ALL_FEATURE_COLS={len(self.ALL_FEATURE_COLS)}."
+                f"Scaler expects {self.scaler.n_features_in_} features, "
+                f"but ALL_FEATURE_COLS has {len(self.ALL_FEATURE_COLS)}."
             )
 
         self.model = ImprovedEngagementModel(extra_dim=self.scaler.n_features_in_)
@@ -150,7 +191,7 @@ class Predictor:
         followers: int,
         account_type: str,
         following: int,
-        num_posts: int
+        num_posts: int,
     ) -> np.ndarray:
         polarity = _safe_polarity(text)
 
@@ -163,20 +204,27 @@ class Predictor:
 
         emoji_count = _count_emojis(text)
 
-        return np.array([[
-            sn, sne, sp,
-            float(len(text)),
-            float(len(text.split())),
-            float(len(re.findall(r'#\w+', text))),
-            float(len(re.findall(r'@\w+', text))),
-            float(text.count('!')),
-            float(text.count('?')),
-            float(emoji_count),
-            float(followers),
-            float(following),
-            float(num_posts),
-            1.0 if str(account_type).upper() == "BUSINESS" else 0.0,
-        ]], dtype=np.float32)
+        return np.array(
+            [
+                [
+                    sn,
+                    sne,
+                    sp,
+                    float(len(text)),
+                    float(len(text.split())),
+                    float(len(re.findall(r"#\w+", text))),
+                    float(len(re.findall(r"@\w+", text))),
+                    float(text.count("!")),
+                    float(text.count("?")),
+                    float(emoji_count),
+                    float(followers),
+                    float(following),
+                    float(num_posts),
+                    1.0 if str(account_type).upper() == "BUSINESS" else 0.0,
+                ]
+            ],
+            dtype=np.float32,
+        )
 
     def _top_phrases(self, enc: dict) -> list:
         try:
@@ -215,10 +263,9 @@ class Predictor:
         words = text.split()
         wc = len(words)
 
-        htags = len(re.findall(r'#\w+', text))
-        mntns = len(re.findall(r'@\w+', text))
-        qmarks = text.count('?')
-        excl = text.count('!')
+        htags = len(re.findall(r"#\w+", text))
+        mntns = len(re.findall(r"@\w+", text))
+        qmarks = text.count("?")
         emojis = _count_emojis(text)
         cta_hit = any(w in tl for w in self._CTA_WORDS)
 
@@ -291,8 +338,8 @@ class Predictor:
 
         diag.append(
             "Call-to-Action detected — good for driving interactions"
-            if cta_hit else
-            "No Call-to-Action found — missed engagement trigger"
+            if cta_hit
+            else "No Call-to-Action found — missed engagement trigger"
         )
 
         if has_direct:
@@ -377,8 +424,7 @@ class Predictor:
 
         avg_likes_int = int(avg_likes or 0)
         predicted_eng = (
-            int(avg_likes_int * (raw_val / 2.0)) if avg_likes_int > 0
-            else int(raw_val * 50)
+            int(avg_likes_int * (raw_val / 2.0)) if avg_likes_int > 0 else int(raw_val * 50)
         )
 
         polarity = _safe_polarity(text)
@@ -390,7 +436,8 @@ class Predictor:
         growth_pct = None
         if delta_ok:
             growth_pct = round(
-                ((predicted_eng - avg_likes_int) / max(avg_likes_int, 1)) * 100, 1
+                ((predicted_eng - avg_likes_int) / max(avg_likes_int, 1)) * 100,
+                1,
             )
 
         lang = self._language_analysis(text, polarity)
