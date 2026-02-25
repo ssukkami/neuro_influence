@@ -2,8 +2,8 @@
 
 The trained model is not stored in this repository due to its large size.
 
-You can download the model from Google Drive:
-PASTE_YOUR_GOOGLE_DRIVE_LINK_HERE
+You can download the model from Google Drive:  
+[Neuro Influence model files](https://drive.google.com/drive/folders/1VMge2oRsyokSWxrrmpcCKKQW6zVOR72y?usp=sharing)
 
 After downloading:
 1. Download the folder as ZIP (Google Drive archives it automatically).
@@ -11,7 +11,9 @@ After downloading:
 3. Place the files into the following directory:
 
 model_assets/
+
  ├── best_roberta_model.pth
+ 
  └── best_scaler.pkl
 
 ## Usage
